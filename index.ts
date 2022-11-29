@@ -1,4 +1,5 @@
 import * as express from 'express';
+import * as memoize from 'memoizee';
 import { XMLParser } from 'fast-xml-parser';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
@@ -27,8 +28,7 @@ interface ItemView extends RSSItem {
     content: string;
 }
 
-// TODO: cache items
-const fetchItem = async (item: Partial<ItemView> & { link: string }): Promise<ItemView | undefined> => {
+const unmemoizedFetchItem = async (item: Partial<ItemView> & { link: string }): Promise<ItemView | undefined> => {
     const { link } = item;
 
     console.log('fetching', link);
@@ -55,6 +55,8 @@ const fetchItem = async (item: Partial<ItemView> & { link: string }): Promise<It
     };
 };
 
+const fetchItem = memoize(unmemoizedFetchItem, { promise: true, primitive: true });
+
 // assumes given url is a valid RSS feed
 app.get('/rss/:root_rss', async (req, res) => {
     console.log('ohai', req.url, req.params);
@@ -64,7 +66,7 @@ app.get('/rss/:root_rss', async (req, res) => {
 
     const xml: { rss: { channel: RSSChannel } } = new XMLParser().parse(content);
     console.log(xml);
-    const rssItems = xml.rss.channel.item.slice(0, 10);
+    const rssItems = xml.rss.channel.item.slice(0, 50);
 
     console.log('items', rssItems);
 
