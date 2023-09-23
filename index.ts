@@ -2,6 +2,7 @@ import { XMLParser } from 'fast-xml-parser';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
 import { render } from 'mustache';
+import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { argv } from 'node:process';
 
@@ -26,13 +27,16 @@ interface ItemView extends RSSItem {
     content: string;
 }
 
+interface ETagCache {
+    [url: string]: string
+}
+
 const fetchItem = async (item: Partial<ItemView> & { link: string }, selectorsString: string): Promise<ItemView | undefined> => {
     const { link } = item;
     const selectors = selectorsString.split(';');
-    console.log('fetching:', link, 'selectors:', selectors);
+    console.debug('fetching:', link, 'selectors:', selectors);
     const response = await fetch(link);
     const content = await response.text();
-    // console.log('response', response.headers, content);
     const dom = new JSDOM(content);
     let document = dom.window.document.querySelector('body');
     if (!document) {
@@ -50,11 +54,10 @@ const fetchItem = async (item: Partial<ItemView> & { link: string }, selectorsSt
             document.querySelectorAll(selector.slice(1)).forEach(element => element.remove());
         }
     }
-    // console.log('dom', dom);
     const reader = new Readability(dom.window.document);
     const parseResult = reader.parse();
 
-    console.log('finished parsing', link, 'successful:', !!parseResult);
+    console.debug('finished parsing', link, 'successful:', !!parseResult);
 
     if (!parseResult) {
         return;
@@ -69,17 +72,41 @@ const fetchItem = async (item: Partial<ItemView> & { link: string }, selectorsSt
     };
 };
 
+const loadETag = async (url: string): Promise<string | undefined> => {
+    if (!existsSync('etag-cache.json')) {
+        return undefined;
+    }
+    const file = await readFile('etag-cache.json', 'utf8');
+    const cache: ETagCache = JSON.parse(file);
+    return cache[url];
+}
+
+const saveETag = async (url: string, etag: string) => {
+    const file = existsSync('etag-cache.json')
+        ? await readFile('etag-cache.json', 'utf8')
+        : "{}";
+    const cache: ETagCache = JSON.parse(file);
+    cache[url] = etag;
+    await writeFile('etag-cache.json', JSON.stringify(cache), 'utf8');
+}
 
 // assumes given url is a valid RSS feed
 const run = async (root_rss: string, output_file: string) => {
-    console.log('fetching', root_rss);
-    const response = await fetch(root_rss);
+    const etag = await loadETag(root_rss);
+    console.info('fetching', root_rss, 'etag:', etag);
+    const response = await fetch(root_rss, {
+        headers: etag ? { "If-None-Match": etag } : undefined
+    });
+    if (response.status === 304) {
+        console.info('rss feed has not changed, nothing to update');
+        return;
+    }
     const content = await response.text();
 
     const xml: { rss: { channel: RSSChannel } } = new XMLParser().parse(content);
     const rssItems = xml.rss.channel.item.slice(0, 50);
 
-    console.log('got feed with', rssItems.length, 'items:', xml);
+    console.info('got feed with', rssItems.length, 'items:', xml);
 
     const unfilteredItemViews = await Promise.all(rssItems.map((item) => fetchItem(item, '')));
     const items = unfilteredItemViews.filter((x): x is ItemView => !!x);
@@ -93,7 +120,17 @@ const run = async (root_rss: string, output_file: string) => {
     };
 
     const output_rss = render(template, feedView);
-    await writeFile(output_file, output_rss);
+    await writeFile(output_file, output_rss, 'utf8');
+
+    const newETag = response.headers.get('ETag');
+    if (newETag) {
+        await saveETag(root_rss, newETag);
+        console.debug('saved etag', newETag);
+    }
+}
+
+if (!argv[2] || !argv[3]) {
+    throw new Error(`not enough arguments: ${argv}`);
 }
 
 run(argv[2], argv[3]);

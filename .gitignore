@@ -197,3 +197,4 @@ dist
 
 *.rss
 index.js
+etag-cache.json
