@@ -1,13 +1,10 @@
-import express from 'express';
-import memoize from 'memoizee';
-import stringify from 'json-stable-stringify';
 import { XMLParser } from 'fast-xml-parser';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
 import { render } from 'mustache';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { argv } from 'node:process';
 
-const app = express();
 
 interface RSSChannel {
     title: string;
@@ -29,7 +26,7 @@ interface ItemView extends RSSItem {
     content: string;
 }
 
-const unmemoizedFetchItem = async (item: Partial<ItemView> & { link: string }, selectorsString: string): Promise<ItemView | undefined> => {
+const fetchItem = async (item: Partial<ItemView> & { link: string }, selectorsString: string): Promise<ItemView | undefined> => {
     const { link } = item;
     const selectors = selectorsString.split(';');
     console.log('fetching:', link, 'selectors:', selectors);
@@ -41,6 +38,7 @@ const unmemoizedFetchItem = async (item: Partial<ItemView> & { link: string }, s
     if (!document) {
         return;
     }
+    // selector logic
     for (const selector of selectors) {
         if (selector.trim().length === 0) {
             continue;
@@ -71,25 +69,17 @@ const unmemoizedFetchItem = async (item: Partial<ItemView> & { link: string }, s
     };
 };
 
-const fetchItem = memoize(unmemoizedFetchItem, { promise: true, normalizer: (args) => stringify(args[0]) + args[1] });
-
 
 // assumes given url is a valid RSS feed
-app.get('/rss', async (req, res) => {
-    console.log('ohai', req.url, req.query);
-    const root_rss = req.query?.['root_rss'];
-    if (!root_rss || typeof root_rss !== 'string') {
-        return;
-    }
+const run = async (root_rss: string, output_file: string) => {
+    console.log('fetching', root_rss);
     const response = await fetch(root_rss);
     const content = await response.text();
-    // console.log('response', response.headers, content);
 
     const xml: { rss: { channel: RSSChannel } } = new XMLParser().parse(content);
-    console.log(xml);
     const rssItems = xml.rss.channel.item.slice(0, 50);
 
-    console.log('found', rssItems.length, 'items');
+    console.log('got feed with', rssItems.length, 'items:', xml);
 
     const unfilteredItemViews = await Promise.all(rssItems.map((item) => fetchItem(item, '')));
     const items = unfilteredItemViews.filter((x): x is ItemView => !!x);
@@ -102,7 +92,8 @@ app.get('/rss', async (req, res) => {
         items
     };
 
-    res.send(render(template, feedView));
-});
+    const output_rss = render(template, feedView);
+    await writeFile(output_file, output_rss);
+}
 
-app.listen(8080);
+run(argv[2], argv[3]);
