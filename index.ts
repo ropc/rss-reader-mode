@@ -65,10 +65,11 @@ const fetchItem = async (item: Partial<ItemView> & { link: string }, selectorsSt
 
     return {
         ...parseResult,
+        ...item,
         description: parseResult.excerpt,
         pubDate: new Date().toISOString(),
         author: parseResult.byline,
-        ...item
+        guid: item.guid ?? item.link,
     };
 };
 
