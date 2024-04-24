@@ -103,7 +103,7 @@ const runSingle = async (root_rss: string, output_file: string) => {
         headers: etag ? { "If-None-Match": etag } : undefined
     });
     if (response.status === 304) {
-        console.info('rss feed has not changed, nothing to update');
+        console.info(`rss feed ${root_rss} has not changed, nothing to update`);
         return;
     }
     const content = await response.text();
@@ -111,7 +111,7 @@ const runSingle = async (root_rss: string, output_file: string) => {
     const xml: { rss: { channel: RSSChannel } } = new XMLParser().parse(content);
     const rssItems = xml.rss.channel.item.slice(0, 50);
 
-    console.info('got feed with', rssItems.length, 'items:', xml);
+    console.info('got', root_rss, 'feed with', rssItems.length, 'items:', xml);
 
     const unfilteredItemViews = await Promise.all(rssItems.map((item) => fetchItem(item, '')));
     const items = unfilteredItemViews.filter((x): x is ItemView => !!x);
@@ -130,7 +130,7 @@ const runSingle = async (root_rss: string, output_file: string) => {
     const newETag = response.headers.get('ETag');
     if (newETag) {
         await saveETag(root_rss, newETag);
-        console.debug('saved etag', newETag);
+        console.debug(root_rss, 'saved etag', newETag);
     }
 };
 
