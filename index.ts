@@ -31,6 +31,10 @@ interface ETagCache {
     [url: string]: string
 }
 
+interface Config {
+    [url: string]: string;  // url -> output file path
+}
+
 const fetchItem = async (item: Partial<ItemView> & { link: string }, selectorsString: string): Promise<ItemView | undefined> => {
     const { link } = item;
     const selectors = selectorsString.split(';');
@@ -92,7 +96,7 @@ const saveETag = async (url: string, etag: string) => {
 }
 
 // assumes given url is a valid RSS feed
-const run = async (root_rss: string, output_file: string) => {
+const runSingle = async (root_rss: string, output_file: string) => {
     const etag = await loadETag(root_rss);
     console.info('fetching', root_rss, 'etag:', etag);
     const response = await fetch(root_rss, {
@@ -128,10 +132,23 @@ const run = async (root_rss: string, output_file: string) => {
         await saveETag(root_rss, newETag);
         console.debug('saved etag', newETag);
     }
-}
+};
 
-if (!argv[2] || !argv[3]) {
+const runBatch = async (config_path: string) => {
+    const file = existsSync(config_path)
+        ? await readFile(config_path, 'utf8')
+        : "{}";
+    const config: Config = JSON.parse(file);
+    const promises = Object.keys(config).map(url => runSingle(url, config[url]!))
+    return Promise.all(promises);
+};
+
+if (!argv[2]) {
     throw new Error(`not enough arguments: ${argv}`);
 }
 
-run(argv[2], argv[3]);
+if (argv[3]) {
+    runSingle(argv[2], argv[3]);
+} else {
+    runBatch(argv[2]);
+}
