@@ -38,7 +38,7 @@ interface Config {
 const fetchItem = async (item: Partial<ItemView> & { link: string }, selectorsString: string): Promise<ItemView | undefined> => {
     const { link } = item;
     const selectors = selectorsString.split(';');
-    console.debug('fetching:', link, 'selectors:', selectors);
+    console.debug('fetching:', link, 'selectors:', selectors, 'item', item);
     const response = await fetch(link);
     const content = await response.text();
     const dom = new JSDOM(content);
@@ -69,9 +69,9 @@ const fetchItem = async (item: Partial<ItemView> & { link: string }, selectorsSt
 
     return {
         ...parseResult,
+        pubDate: new Date().toISOString(),
         ...item,
         description: parseResult.excerpt,
-        pubDate: new Date().toISOString(),
         author: parseResult.byline,
         guid: item.guid ?? item.link,
     };
