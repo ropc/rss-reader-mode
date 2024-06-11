@@ -5,7 +5,10 @@ import { render } from 'mustache';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { argv } from 'node:process';
+import { formatDate } from 'date-fns';
 
+
+const RSS_DATE_FORMAT = "ddd, DD MMM YYYY HH:mm:ss ZZ";
 
 interface RSSChannel {
     title: string;
@@ -69,8 +72,8 @@ const fetchItem = async (item: Partial<ItemView> & { link: string }, selectorsSt
 
     return {
         ...parseResult,
-        pubDate: new Date().toISOString(),
         ...item,
+        pubDate: item.pubDate ?? formatDate(new Date(), RSS_DATE_FORMAT),
         description: parseResult.excerpt,
         author: parseResult.byline,
         guid: item.guid ?? item.link,
